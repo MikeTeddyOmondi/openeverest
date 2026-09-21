@@ -26,8 +26,7 @@
 // unquoted bracket segment such as an array index (group 3), or a bare run of
 // characters that are not a delimiter (whole match). Dots between tokens are
 // delimiters and are skipped.
-const PATH_TOKEN =
-  /\[(['"])((?:\\.|(?!\1).)*)\1\]|\[([^\]]*)\]|[^.[\]]+/g;
+const PATH_TOKEN = /\[(['"])((?:\\.|(?!\1).)*)\1\]|\[([^\]]*)\]|[^.[\]]+/g;
 
 export const tokenizePath = (path: string): string[] => {
   if (typeof path !== 'string' || path.length === 0) {

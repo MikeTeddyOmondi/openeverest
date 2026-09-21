@@ -21,11 +21,74 @@ import {
   formatDisplayValue,
   getByPath,
   isPlainObject,
+  joinPath,
   resolvePath,
   setByPath,
+  tokenizePath,
 } from './object-path';
 
 describe('object-path utils', () => {
+  describe('tokenizePath', () => {
+    it('splits a plain dotted path', () => {
+      expect(tokenizePath('spec.components.proxy.replicas')).toEqual([
+        'spec',
+        'components',
+        'proxy',
+        'replicas',
+      ]);
+    });
+
+    it('returns an empty array for an empty path', () => {
+      expect(tokenizePath('')).toEqual([]);
+    });
+
+    it('keeps a bracket-quoted key with dots and a slash intact', () => {
+      expect(tokenizePath("spec.limits['nvidia.com/gpu']")).toEqual([
+        'spec',
+        'limits',
+        'nvidia.com/gpu',
+      ]);
+    });
+
+    it('handles a leading bracket-quoted segment', () => {
+      expect(tokenizePath("['app.kubernetes.io/name'].value")).toEqual([
+        'app.kubernetes.io/name',
+        'value',
+      ]);
+    });
+
+    it('treats a bare slash key as a single segment', () => {
+      expect(tokenizePath('metadata.foo/bar')).toEqual(['metadata', 'foo/bar']);
+    });
+
+    it('supports unquoted numeric bracket indices', () => {
+      expect(tokenizePath('items[0].name')).toEqual(['items', '0', 'name']);
+    });
+  });
+
+  describe('joinPath', () => {
+    it('joins plain segments with dots', () => {
+      expect(joinPath(['spec', 'replicas'])).toBe('spec.replicas');
+    });
+
+    it('brackets a segment that contains a dot', () => {
+      expect(joinPath(['spec', 'limits', 'nvidia.com/gpu'])).toBe(
+        "spec.limits['nvidia.com/gpu']"
+      );
+    });
+
+    it('brackets a leading dotted segment without a leading dot', () => {
+      expect(joinPath(['app.kubernetes.io/name', 'value'])).toBe(
+        "['app.kubernetes.io/name'].value"
+      );
+    });
+
+    it('round-trips with tokenizePath', () => {
+      const path = "spec.components.limits['nvidia.com/gpu']";
+      expect(joinPath(tokenizePath(path))).toBe(path);
+    });
+  });
+
   describe('resolvePath', () => {
     it('resolves a non-empty string path', () => {
       expect(resolvePath('spec.components.proxy.replicas')).toBe(
@@ -77,6 +140,11 @@ describe('object-path utils', () => {
     it('returns a top-level key', () => {
       expect(getByPath({ x: 42 }, 'x')).toBe(42);
     });
+
+    it('reads a bracket-quoted key that contains dots', () => {
+      const data = { limits: { 'nvidia.com/gpu': 2 } };
+      expect(getByPath(data, "limits['nvidia.com/gpu']")).toBe(2);
+    });
   });
 
   describe('setByPath', () => {
@@ -103,6 +171,12 @@ describe('object-path utils', () => {
       setByPath(data, 'a.b', 5);
       expect(getByPath(data, 'a.b')).toBe(5);
     });
+
+    it('sets a bracket-quoted key that contains dots', () => {
+      const data: Record<string, unknown> = {};
+      setByPath(data, "spec.limits['nvidia.com/gpu']", 1);
+      expect(data).toEqual({ spec: { limits: { 'nvidia.com/gpu': 1 } } });
+    });
   });
 
   describe('deleteByPath', () => {
@@ -117,6 +191,14 @@ describe('object-path utils', () => {
       const data = { a: 1 };
       deleteByPath(data, 'x.y.z');
       expect(data).toEqual({ a: 1 });
+    });
+
+    it('deletes a bracket-quoted key that contains dots', () => {
+      const data: Record<string, unknown> = {
+        limits: { 'nvidia.com/gpu': 1, cpu: '2' },
+      };
+      deleteByPath(data, "limits['nvidia.com/gpu']");
+      expect(data).toEqual({ limits: { cpu: '2' } });
     });
 
     it('is a no-op for an empty path', () => {
@@ -168,6 +250,13 @@ describe('object-path utils', () => {
       expect(flattenObject({ x: 10 }, 'root')).toEqual([
         { key: 'root.x', value: 10 },
       ]);
+    });
+
+    it('brackets keys that contain dots so they round-trip', () => {
+      const source = { limits: { 'nvidia.com/gpu': 1 } };
+      const result = flattenObject(source);
+      expect(result).toEqual([{ key: "limits['nvidia.com/gpu']", value: 1 }]);
+      expect(getByPath(source, result[0].key)).toBe(1);
     });
   });
 

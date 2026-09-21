@@ -16,6 +16,7 @@ import type { Section } from '../../ui-generator.types';
 import { generateFieldId } from './generate-field-id';
 import { getComponentTargetPaths } from '../preprocess/normalized-component';
 import { walkLeafComponents } from '../schema-walker';
+import { joinPath, tokenizePath } from '../object-path';
 
 export const buildSectionFieldMap = (
   sections: { [key: string]: Section },
@@ -40,9 +41,9 @@ export const buildSectionFieldMap = (
           // nodes (e.g. when a nested object is undefined on topology switch) still
           // map to the correct step, rather than falling back to the top-level key
           // which may belong to a completely different step.
-          const parts = path.split('.');
+          const parts = tokenizePath(path);
           for (let i = 1; i < parts.length; i++) {
-            const prefix = parts.slice(0, i).join('.');
+            const prefix = joinPath(parts.slice(0, i));
             if (!(prefix in map)) {
               map[prefix] = sectionKey;
             }

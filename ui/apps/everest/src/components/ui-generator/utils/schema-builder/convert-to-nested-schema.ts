@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { z } from 'zod';
+import { tokenizePath } from '../object-path';
 
 export const convertToNestedSchema = (
   flatSchema: Record<string, z.ZodTypeAny>
@@ -21,7 +22,7 @@ export const convertToNestedSchema = (
 
   // Build nested structure from flat paths
   Object.entries(flatSchema).forEach(([path, zodType]) => {
-    const keys = path.split('.');
+    const keys = tokenizePath(path);
     let current: Record<string, unknown> = nested;
 
     keys.forEach((key, index) => {

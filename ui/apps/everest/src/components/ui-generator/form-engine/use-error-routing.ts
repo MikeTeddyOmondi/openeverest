@@ -14,10 +14,11 @@
 
 import { useMemo } from 'react';
 import { FieldErrors } from 'react-hook-form';
+import { joinPath, tokenizePath } from '../utils/object-path';
 
 /**
  * Walks the react-hook-form `errors` object and collects all leaf
- * error paths as dot-separated strings.
+ * error paths as canonical (bracket-quoted where needed) strings.
  *
  * A leaf node is detected by the presence of `message` or `type`,
  * which is how RHF represents individual field errors.
@@ -32,7 +33,7 @@ export const flattenErrorPaths = (
   return Object.keys(obj).flatMap((key) =>
     flattenErrorPaths(
       obj[key] as Record<string, unknown>,
-      prefix ? `${prefix}.${key}` : key
+      joinPath(prefix ? [...tokenizePath(prefix), key] : [key])
     )
   );
 };
@@ -58,9 +59,9 @@ export const useErrorRouting = (
       if (typeof path !== 'string' || path.length === 0) continue;
 
       // Try full path first, then progressively shorter prefixes.
-      const parts = path.split('.');
+      const parts = tokenizePath(path);
       for (let i = parts.length; i > 0; i--) {
-        const prefix = parts.slice(0, i).join('.');
+        const prefix = joinPath(parts.slice(0, i));
         if (prefix in fieldToStepMap) {
           stepsSet.add(fieldToStepMap[prefix]);
           break;

@@ -15,7 +15,55 @@
 /**
  * Shared object-path utilities for navigating, mutating, and inspecting
  * nested objects by dot-separated paths (e.g. "spec.components.proxy.replicas").
+ *
+ * Segments whose own name contains a dot (Kubernetes qualified names such as
+ * "nvidia.com/gpu" or "app.kubernetes.io/name") are expressed with lodash-style
+ * bracket notation so they survive tokenization:
+ *   resources.limits['nvidia.com/gpu'] => ['resources', 'limits', 'nvidia.com/gpu']
  */
+
+// Matches, in order: a single/double-quoted bracket segment (group 2), an
+// unquoted bracket segment such as an array index (group 3), or a bare run of
+// characters that are not a delimiter (whole match). Dots between tokens are
+// delimiters and are skipped.
+const PATH_TOKEN =
+  /\[(['"])((?:\\.|(?!\1).)*)\1\]|\[([^\]]*)\]|[^.[\]]+/g;
+
+export const tokenizePath = (path: string): string[] => {
+  if (typeof path !== 'string' || path.length === 0) {
+    return [];
+  }
+
+  const tokens: string[] = [];
+  PATH_TOKEN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PATH_TOKEN.exec(path)) !== null) {
+    if (match[2] !== undefined) {
+      tokens.push(match[2].replace(/\\(.)/g, '$1'));
+    } else if (match[3] !== undefined) {
+      tokens.push(match[3]);
+    } else {
+      tokens.push(match[0]);
+    }
+  }
+
+  return tokens;
+};
+
+const segmentNeedsBrackets = (segment: string): boolean =>
+  segment.length === 0 || /[.[\]'"]/.test(segment);
+
+export const joinPath = (segments: string[]): string => {
+  let result = '';
+  for (const segment of segments) {
+    if (segmentNeedsBrackets(segment)) {
+      result += `['${segment.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}']`;
+    } else {
+      result += result.length === 0 ? segment : `.${segment}`;
+    }
+  }
+  return result;
+};
 
 export const isPlainObject = (
   value: unknown
@@ -51,7 +99,7 @@ export const getByPath = (
     return undefined;
   }
 
-  return path.split('.').reduce<unknown>((current, key) => {
+  return tokenizePath(path).reduce<unknown>((current, key) => {
     if (!isPlainObject(current)) {
       return undefined;
     }
@@ -69,7 +117,10 @@ export const setByPath = (
     return;
   }
 
-  const parts = path.split('.');
+  const parts = tokenizePath(path);
+  if (parts.length === 0) {
+    return;
+  }
   let current: Record<string, unknown> = obj;
 
   for (let i = 0; i < parts.length - 1; i++) {
@@ -91,7 +142,10 @@ export const deleteByPath = (
     return;
   }
 
-  const parts = path.split('.');
+  const parts = tokenizePath(path);
+  if (parts.length === 0) {
+    return;
+  }
   let current: Record<string, unknown> = obj;
 
   for (let i = 0; i < parts.length - 1; i++) {
@@ -113,7 +167,9 @@ export const flattenObject = (obj: unknown, prefix = ''): FlatEntry[] => {
   if (!isPlainObject(obj)) return result;
 
   for (const [k, v] of Object.entries(obj)) {
-    const fullKey = prefix ? `${prefix}.${k}` : k;
+    const fullKey = prefix
+      ? joinPath([...tokenizePath(prefix), k])
+      : joinPath([k]);
     if (isPlainObject(v)) {
       result.push(...flattenObject(v, fullKey));
     } else {

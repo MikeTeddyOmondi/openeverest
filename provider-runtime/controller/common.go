@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -149,19 +150,24 @@ func (c *Context) Apply(obj client.Object) error {
 		return fmt.Errorf("failed to set owner: %w", err)
 	}
 
-	// Use create-or-update semantics
-	existing := obj.DeepCopyObject().(client.Object)
-	err := c.client.Get(c.ctx, client.ObjectKeyFromObject(obj), existing)
+	// Server-side apply so the provider owns only the fields it sets. Fields the
+	// target engine operator defaults or injects into its own CR (e.g. the
+	// milvus-operator hydrating spec.dependencies values or defaulting component
+	// fields) keep their own field manager and are preserved, instead of being
+	// clobbered by a full-object update and triggering a reconcile battle.
+	gvk, err := apiutil.GVKForObject(obj, c.client.Scheme())
 	if err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return err
-		}
-		// Doesn't exist, create it
-		return c.client.Create(c.ctx, obj)
+		return fmt.Errorf("failed to resolve GVK for apply: %w", err)
 	}
-	// Exists, update it
-	obj.SetResourceVersion(existing.GetResourceVersion())
-	return c.client.Update(c.ctx, obj)
+	obj.GetObjectKind().SetGroupVersionKind(gvk)
+	// Apply patches must not carry managedFields or a resourceVersion.
+	obj.SetManagedFields(nil)
+	obj.SetResourceVersion("")
+
+	return c.client.Patch(c.ctx, obj, client.Apply,
+		client.FieldOwner("provider-"+c.providerName),
+		client.ForceOwnership,
+	)
 }
 
 // Get retrieves a resource by name (in the instance's namespace).

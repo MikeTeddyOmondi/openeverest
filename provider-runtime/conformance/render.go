@@ -198,6 +198,10 @@ func render(
 				obs.applied = append(obs.applied, serialize(obj))
 				return c.Update(ctx, obj, opts...)
 			},
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				obs.applied = append(obs.applied, serialize(obj))
+				return c.Patch(ctx, obj, patch, opts...)
+			},
 		}).
 		Build()
 

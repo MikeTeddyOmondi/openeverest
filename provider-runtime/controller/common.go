@@ -24,6 +24,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -160,11 +162,19 @@ func (c *Context) Apply(obj client.Object) error {
 		return fmt.Errorf("failed to resolve GVK for apply: %w", err)
 	}
 	obj.GetObjectKind().SetGroupVersionKind(gvk)
-	// Apply patches must not carry managedFields or a resourceVersion.
+	// Apply configurations must not carry managedFields or a resourceVersion.
 	obj.SetManagedFields(nil)
 	obj.SetResourceVersion("")
 
-	return c.client.Patch(c.ctx, obj, client.Apply,
+	// The typed object is converted to an unstructured apply configuration:
+	// omitempty tags drop zero values, so the provider only claims the fields it
+	// actually populates.
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return fmt.Errorf("failed to build apply configuration: %w", err)
+	}
+	return c.client.Apply(c.ctx,
+		client.ApplyConfigurationFromUnstructured(&unstructured.Unstructured{Object: raw}),
 		client.FieldOwner("provider-"+c.providerName),
 		client.ForceOwnership,
 	)

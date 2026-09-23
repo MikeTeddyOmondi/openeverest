@@ -198,9 +198,11 @@ func render(
 				obs.applied = append(obs.applied, serialize(obj))
 				return c.Update(ctx, obj, opts...)
 			},
-			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-				obs.applied = append(obs.applied, serialize(obj))
-				return c.Patch(ctx, obj, patch, opts...)
+			Apply: func(ctx context.Context, c client.WithWatch, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+				if data, err := json.Marshal(obj); err == nil {
+					obs.applied = append(obs.applied, string(data))
+				}
+				return c.Apply(ctx, obj, opts...)
 			},
 		}).
 		Build()
